@@ -1,0 +1,16 @@
+{
+  "name": "Spese Famiglia",
+  "short_name": "Spese",
+  "description": "Tracciamento spese supermercato",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f0f4ff",
+  "theme_color": "#7c6ff7",
+  "icons": [
+    {
+      "src": "https://fav.farm/🧺",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
