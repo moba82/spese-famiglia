@@ -1,11 +1,10 @@
-// api/spese.js
 const KEY = 'spese_famiglia'
 
 async function upstash(path, method = 'GET', body) {
-  const res = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}${path}`, {
+  const res = await fetch(`${process.env.KV_REST_API_URL}${path}`, {
     method,
     headers: {
-      Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
+      Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}`,
       'Content-Type': 'application/json',
     },
     body: body ? JSON.stringify(body) : undefined,
