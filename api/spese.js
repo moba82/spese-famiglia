@@ -1,26 +1,33 @@
 // api/spese.js
-// Vercel Serverless Function — legge e scrive le spese su Vercel KV
-import { kv } from '@vercel/kv'
+const KEY = 'spese_famiglia'
 
-const KV_KEY = 'spese_famiglia'
+async function upstash(path, method = 'GET', body) {
+  const res = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  return res.json()
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   if (req.method === 'GET') {
-    const spese = await kv.get(KV_KEY) || []
+    const data = await upstash(`/get/${KEY}`)
+    const spese = data.result ? JSON.parse(data.result) : []
     return res.status(200).json(spese)
   }
 
   if (req.method === 'POST') {
     const { spese } = req.body
-    await kv.set(KV_KEY, spese)
+    await upstash(`/set/${KEY}`, 'POST', JSON.stringify(spese))
     return res.status(200).json({ ok: true })
   }
 
-  return res.status(405).json({ error: 'Metodo non permesso' })
+  return res.status(405).end()
 }
