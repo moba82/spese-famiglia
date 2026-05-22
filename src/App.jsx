@@ -4,16 +4,21 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 const T = {
   bg: "#f0f4ff", card: "#ffffff", primary: "#7c6ff7", primaryLight: "#ede9fe",
   teal: "#14b8a6", tealLight: "#ccfbf1", rose: "#f43f5e", roseLight: "#ffe4e6",
-  amber: "#f59e0b", amberLight: "#fef3c7", sky: "#38bdf8", skyLight: "#e0f2fe",
-  green: "#22c55e", greenLight: "#dcfce7", text: "#1e1b4b", sub: "#64748b",
-  muted: "#94a3b8", border: "#e8e4ff", shadow: "0 4px 24px rgba(124,111,247,0.08)",
+  amber: "#f59e0b", amberLight: "#fef3c7", green: "#22c55e", greenLight: "#dcfce7",
+  text: "#1e1b4b", sub: "#64748b", muted: "#94a3b8", border: "#e8e4ff",
+  shadow: "0 4px 24px rgba(124,111,247,0.08)",
 };
 
 const CATEGORIE = {
-  "🥦 Frutta & Verdura": "#10b981", "🥛 Latticini & Uova": "#f59e0b",
-  "🥖 Pane & Pasta": "#f97316", "🥩 Carne & Pesce": "#ef4444",
-  "🧴 Igiene & Casa": "#38bdf8", "🍫 Snack & Dolci": "#a855f7",
-  "🥫 Conserve & Varie": "#84cc16", "🌿 Altro": "#94a3b8",
+  "🥦 Frutta & Verdura": "#10b981",
+  "🥜 Frutta Secca & Semi": "#84cc16",
+  "🌱 Latte & Alternative Veg": "#f59e0b",
+  "🥖 Pane & Pasta & Cereali": "#f97316",
+  "🫘 Legumi & Proteine Veg": "#ef4444",
+  "🧴 Igiene & Casa": "#38bdf8",
+  "🍫 Snack & Dolci": "#a855f7",
+  "🥫 Conserve & Varie": "#64748b",
+  "🌿 Altro": "#94a3b8",
 };
 const CAT_KEYS = Object.keys(CATEGORIE);
 const CAT_COLORS = Object.values(CATEGORIE);
@@ -24,7 +29,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const mesePretty = (k) => new Date(k + "-01").toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 
 const JUNK_KEYWORDS = [
-  "patatine","chips","nachos","cheetos","popcorn","crackers","snack",
+  "patatine","chips","nachos","cheetos","popcorn","pringles","doritos","fonzies",
   "nutella","pan di stelle","mulino bianco","ringo","oreo","kit kat","kinder","mars",
   "snickers","bounty","twix","ferrero","ovetto","biscotti","wafer","merendina","merendine",
   "crostatina","plumcake","muffin","pandoro","panettone","gelato","ghiacciolo","cornetto","magnum",
@@ -34,6 +39,7 @@ const JUNK_KEYWORDS = [
   "birra","vino","prosecco","spritz","aperitivo","liquore","amaro","gin","vodka","rum",
 ];
 const isJunk = (nome) => JUNK_KEYWORDS.some(k => nome.toLowerCase().includes(k));
+
 function analizzaJunk(articoli) {
   const junk = articoli.filter(a => isJunk(a.nome) || a.categoria === "🍫 Snack & Dolci");
   const totJunk = junk.reduce((s, a) => s + a.prezzo, 0);
@@ -46,7 +52,6 @@ function analizzaJunk(articoli) {
   return { totJunk, lista: Object.values(gruppi).sort((a, b) => b.tot - a.tot) };
 }
 
-// ── API CALLS ─────────────────────────────────────────────────────────────────
 async function fetchSpese() {
   const r = await fetch('/api/spese');
   return r.json();
@@ -107,6 +112,30 @@ export default function App() {
   const [items, setItems] = useState([{ nome: "", prezzo: "", categoria: CAT_KEYS[0] }]);
   const fileRef = useRef();
 
+  const [domanda, setDomanda] = useState("");
+  const [chiedendo, setChiedendo] = useState(false);
+  const [cronologia, setCronologia] = useState([]);
+
+  const chiedi = async () => {
+    if (!domanda.trim()) return;
+    setChiedendo(true);
+    const d = domanda;
+    setDomanda("");
+    setCronologia(c => [...c, { tipo: "domanda", testo: d }]);
+    try {
+      const r = await fetch('/api/chiedi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domanda: d, spese })
+      });
+      const data = await r.json();
+      setCronologia(c => [...c, { tipo: "risposta", testo: data.risposta || "Nessuna risposta." }]);
+    } catch {
+      setCronologia(c => [...c, { tipo: "risposta", testo: "Errore di connessione, riprova." }]);
+    }
+    setChiedendo(false);
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -129,8 +158,10 @@ export default function App() {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
       const result = await leggiScontrino(b64, file.type);
       setNegozio(result.negozio || "");
-      setDataSp(result.data || today());
-      setItems(result.articoli?.length ? result.articoli.map(a => ({ nome: a.nome, prezzo: String(a.prezzo), categoria: CAT_KEYS.includes(a.categoria) ? a.categoria : CAT_KEYS[0] })) : [{ nome: "", prezzo: "", categoria: CAT_KEYS[0] }]);
+      setDataSp(today());
+      setItems(result.articoli?.length
+        ? result.articoli.map(a => ({ nome: a.nome, prezzo: String(a.prezzo), categoria: CAT_KEYS.includes(a.categoria) ? a.categoria : CAT_KEYS[0] }))
+        : [{ nome: "", prezzo: "", categoria: CAT_KEYS[0] }]);
       setFormOpen(true);
     } catch { setMsg({ ok: false, txt: "Foto non leggibile. Riprova con più luce." }); }
     setLoading(false); e.target.value = "";
@@ -159,7 +190,13 @@ export default function App() {
   const junkCol = pctJunk > 25 ? T.rose : pctJunk > 12 ? T.amber : T.green;
   const junkLightCol = pctJunk > 25 ? T.roseLight : pctJunk > 12 ? T.amberLight : T.greenLight;
   const inp = { width: "100%", border: `1.5px solid ${T.border}`, borderRadius: 12, padding: "11px 14px", fontSize: 15, boxSizing: "border-box", background: "#fafbff", outline: "none", fontFamily: "inherit", color: T.text };
-  const nav = [{ id: "dashboard", icon: "📊", label: "Spese" }, { id: "analisi", icon: "🔍", label: "Analisi" }, { id: "aggiungi", icon: "➕", label: "Aggiungi" }, { id: "storico", icon: "📋", label: "Storico" }];
+  const nav = [
+    { id: "dashboard", icon: "📊", label: "Spese" },
+    { id: "analisi", icon: "🔍", label: "Analisi" },
+    { id: "aggiungi", icon: "➕", label: "Aggiungi" },
+    { id: "chiedi", icon: "💬", label: "Chiedi" },
+    { id: "storico", icon: "📋", label: "Storico" },
+  ];
 
   if (syncing) return (
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
@@ -174,14 +211,14 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Plus Jakarta Sans', sans-serif", paddingBottom: 90 }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <style>{`* { box-sizing: border-box; } input, select { font-family: 'Plus Jakarta Sans', sans-serif; }`}</style>
+      <style>{`* { box-sizing: border-box; } input, select, textarea { font-family: 'Plus Jakarta Sans', sans-serif; }`}</style>
 
       {/* HEADER */}
       <div style={{ background: "rgba(255,255,255,0.85)", backdropFilter: "blur(16px)", borderBottom: `1px solid ${T.border}`, padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ width: 38, height: 38, borderRadius: 12, background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🧺</div>
         <div>
           <div style={{ fontWeight: 800, color: T.text, fontSize: 17, lineHeight: 1 }}>Spese Supermercato</div>
-          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Tracciamento familiare</div>
+          <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>Tracciamento familiare 🌱</div>
         </div>
         {mesiDisp.length > 0 && (
           <select value={mese} onChange={e => setMese(e.target.value)} style={{ marginLeft: "auto", background: T.primaryLight, color: T.primary, border: "none", borderRadius: 20, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
@@ -194,7 +231,7 @@ export default function App() {
 
       <div style={{ padding: "16px" }}>
 
-        {/* DASHBOARD */}
+        {/* ══ DASHBOARD ══ */}
         {tab === "dashboard" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ background: `linear-gradient(135deg, ${T.primary} 0%, #a78bfa 100%)`, borderRadius: 24, padding: "24px 22px", color: "#fff", position: "relative", overflow: "hidden" }}>
@@ -230,7 +267,7 @@ export default function App() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ width: 28, height: 28, borderRadius: 8, background: c.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{c.cat.split(" ")[0]}</div>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.cat.slice(3)}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{c.cat.slice(c.cat.indexOf(" ") + 1)}</span>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 11, color: T.muted, fontWeight: 600 }}>{Math.round(c.val / totMese * 100)}%</span>
@@ -273,7 +310,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ANALISI */}
+        {/* ══ ANALISI ══ */}
         {tab === "analisi" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ fontWeight: 800, color: T.text, fontSize: 22 }}>Analisi & Risparmio</div>
@@ -297,7 +334,7 @@ export default function App() {
                 <div style={{ width: `${Math.min(pctJunk, 100)}%`, minWidth: pctJunk > 0 ? 8 : 0, background: `linear-gradient(90deg, ${junkCol}, ${junkCol}88)`, borderRadius: 100, height: 8 }} />
               </div>
               <div style={{ fontSize: 13, color: junkCol, fontWeight: 600, lineHeight: 1.5, marginBottom: listaJunk.length ? 12 : 0 }}>
-                {pctJunk > 25 ? `⚠️ Quasi 1€ su 4 va in cibo non sano. Tagliando del 50% risparmiereste ${fmt(totJunk * 0.5)}/mese.` : pctJunk > 12 ? `⚡ Discreta quota di junk. Sostituirne metà risparmierebbero ${fmt(totJunk * 0.5)}.` : totJunk > 0 ? "✅ Quota junk contenuta, ottimo!" : "✅ Nessun prodotto junk rilevato questo mese."}
+                {pctJunk > 25 ? `⚠️ Quasi 1€ su 4 va in cibo non sano. Tagliando del 50% risparmiereste ${fmt(totJunk * 0.5)}/mese.` : pctJunk > 12 ? `⚡ Discreta quota di junk. Sostituirne metà risparmierebbe ${fmt(totJunk * 0.5)}.` : totJunk > 0 ? "✅ Quota junk contenuta, ottimo!" : "✅ Nessun prodotto junk rilevato questo mese."}
               </div>
               {listaJunk.length > 0 && (
                 <div style={{ borderTop: `1px solid ${junkCol}22`, paddingTop: 12 }}>
@@ -335,7 +372,7 @@ export default function App() {
                       <div style={{ width: 32, height: 32, borderRadius: 10, background: catColor + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>{p.cat?.split(" ")[0]}</div>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{p.nome}</div>
-                        <div style={{ fontSize: 11, color: catColor, fontWeight: 500 }}>{p.cat?.slice(3)}{p.n > 1 ? ` · ${p.n}×` : ""}</div>
+                        <div style={{ fontSize: 11, color: catColor, fontWeight: 500 }}>{p.cat?.slice(p.cat?.indexOf(" ") + 1)}{p.n > 1 ? ` · ${p.n}×` : ""}</div>
                       </div>
                       <span style={{ fontWeight: 800, color: T.text, fontSize: 15 }}>{fmt(p.tot)}</span>
                     </div>
@@ -370,7 +407,7 @@ export default function App() {
           </div>
         )}
 
-        {/* AGGIUNGI */}
+        {/* ══ AGGIUNGI ══ */}
         {tab === "aggiungi" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ fontWeight: 800, color: T.text, fontSize: 22 }}>Aggiungi scontrino</div>
@@ -379,7 +416,7 @@ export default function App() {
                 <Card style={{ textAlign: "center", padding: "32px 24px", background: `linear-gradient(135deg, ${T.primaryLight}, #fff)`, border: `2px dashed ${T.primary}44` }}>
                   <div style={{ width: 64, height: 64, borderRadius: 20, background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, margin: "0 auto 14px" }}>📸</div>
                   <div style={{ fontWeight: 700, color: T.text, fontSize: 16, marginBottom: 6 }}>Fotografa lo scontrino</div>
-                  <p style={{ color: T.sub, marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>L'AI legge automaticamente negozio, prodotti e prezzi. Ci vogliono 5–10 secondi.</p>
+                  <p style={{ color: T.sub, marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>L'AI legge automaticamente negozio, prodotti e prezzi. La data viene impostata ad oggi e puoi modificarla.</p>
                   <input type="file" accept="image/*" capture="environment" ref={fileRef} onChange={onFoto} style={{ display: "none" }} />
                   <button onClick={() => fileRef.current.click()} disabled={loading} style={{ background: T.primary, color: "#fff", border: "none", borderRadius: 14, padding: "14px 0", fontSize: 15, cursor: "pointer", fontWeight: 700, width: "100%", fontFamily: "inherit", opacity: loading ? 0.65 : 1 }}>
                     {loading ? "⏳ Lettura in corso…" : "📷 Carica o scatta foto"}
@@ -395,7 +432,7 @@ export default function App() {
             ) : (
               <Card>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div><div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Negozio</div><input value={negozio} onChange={e => setNegozio(e.target.value)} placeholder="Es. Esselunga, Conad…" style={inp} /></div>
+                  <div><div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Negozio</div><input value={negozio} onChange={e => setNegozio(e.target.value)} placeholder="Es. Rossetto, Conad…" style={inp} /></div>
                   <div><div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Data</div><input type="date" value={dataSp} onChange={e => setDataSp(e.target.value)} style={inp} /></div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1 }}>Articoli</div>
                   {items.map((item, i) => (
@@ -425,7 +462,70 @@ export default function App() {
           </div>
         )}
 
-        {/* STORICO */}
+        {/* ══ CHIEDI ══ */}
+        {tab === "chiedi" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontWeight: 800, color: T.text, fontSize: 22 }}>💬 Chiedi alle tue spese</div>
+
+            <Card style={{ background: `linear-gradient(135deg, ${T.primaryLight}, #fff)` }}>
+              <div style={{ fontSize: 13, color: T.sub, marginBottom: 10, fontWeight: 600 }}>Esempi di domande:</div>
+              {[
+                "Quante volte abbiamo comprato il tofu?",
+                "Dove costa meno la pasta?",
+                "Quanto spendiamo in media per scontrino?",
+                "Quali sono i 3 prodotti che compriamo più spesso?",
+                "Confronta le spese tra supermercati diversi",
+                "Quali prodotti abbiamo comprato solo una volta?"
+              ].map((e, i) => (
+                <button key={i} onClick={() => setDomanda(e)} style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: `1px solid ${T.border}`, borderRadius: 10, padding: "9px 13px", marginBottom: 6, fontSize: 13, color: T.primary, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+                  {e}
+                </button>
+              ))}
+            </Card>
+
+            <div style={{ display: "flex", gap: 8, position: "sticky", bottom: 90, zIndex: 10 }}>
+              <input
+                value={domanda}
+                onChange={e => setDomanda(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && chiedi()}
+                placeholder="Scrivi la tua domanda…"
+                style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 14, padding: "13px 16px", fontSize: 15, fontFamily: "inherit", outline: "none", background: "#fff", color: T.text, boxShadow: T.shadow }}
+              />
+              <button onClick={chiedi} disabled={chiedendo || !domanda.trim()} style={{ background: T.primary, color: "#fff", border: "none", borderRadius: 14, padding: "0 20px", fontSize: 20, cursor: "pointer", opacity: chiedendo ? 0.6 : 1, boxShadow: T.shadow }}>
+                {chiedendo ? "⏳" : "➤"}
+              </button>
+            </div>
+
+            {spese.length === 0 && (
+              <div style={{ textAlign: "center", color: T.muted, padding: "20px 0" }}>
+                <p>Aggiungi prima qualche scontrino per poter fare domande!</p>
+              </div>
+            )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[...cronologia].reverse().map((m, i) => (
+                <div key={i} style={{
+                  padding: "13px 16px", borderRadius: 16,
+                  background: m.tipo === "domanda" ? T.primary : "#fff",
+                  color: m.tipo === "domanda" ? "#fff" : T.text,
+                  border: m.tipo === "risposta" ? `1px solid ${T.border}` : "none",
+                  boxShadow: T.shadow,
+                  marginLeft: m.tipo === "domanda" ? "10%" : "0",
+                  marginRight: m.tipo === "risposta" ? "10%" : "0",
+                  fontSize: 14, lineHeight: 1.6,
+                  fontWeight: m.tipo === "domanda" ? 600 : 400,
+                  whiteSpace: "pre-wrap"
+                }}>
+                  {m.tipo === "domanda" && <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Tu</div>}
+                  {m.tipo === "risposta" && <div style={{ fontSize: 10, color: T.primary, marginBottom: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>🤖 Assistente</div>}
+                  {m.testo}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══ STORICO ══ */}
         {tab === "storico" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontWeight: 800, color: T.text, fontSize: 22 }}>Storico scontrini</div>
@@ -458,8 +558,8 @@ export default function App() {
           const active = tab === n.id;
           return (
             <button key={n.id} onClick={() => { setTab(n.id); setMsg(null); setFormOpen(false); }} style={{ flex: 1, border: "none", background: "transparent", padding: "10px 0 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-              <div style={{ width: 40, height: 30, borderRadius: 10, background: active ? T.primaryLight : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{n.icon}</div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: active ? T.primary : T.muted }}>{n.label}</span>
+              <div style={{ width: 36, height: 28, borderRadius: 10, background: active ? T.primaryLight : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>{n.icon}</div>
+              <span style={{ fontSize: 9, fontWeight: 700, color: active ? T.primary : T.muted }}>{n.label}</span>
             </button>
           );
         })}
