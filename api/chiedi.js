@@ -1,7 +1,7 @@
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
 
-  const { domanda, spese } = req.body
+  const { messaggi, spese } = req.body
 
   const riepilogo = JSON.stringify(spese.map(s => ({
     negozio: s.negozio,
@@ -9,6 +9,14 @@ module.exports = async function handler(req, res) {
     totale: s.totale,
     articoli: s.articoli.map(a => ({ nome: a.nome, prezzo: a.prezzo, categoria: a.categoria }))
   })))
+
+  const systemPrompt = `Sei un assistente finanziario personale per una famiglia vegana italiana. 
+Hai accesso ai loro dati di spesa al supermercato e rispondi alle loro domande in italiano, in modo chiaro e amichevole.
+Usa emoji dove utile. Puoi fare domande di follow-up per approfondire. Se i dati sono insufficienti dillo chiaramente.
+Ricorda il contesto della conversazione precedente e costruisci le risposte su di esso.
+
+DATI SPESE FAMIGLIA:
+${riepilogo}`
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -21,15 +29,8 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: `Sei un assistente finanziario per una famiglia vegana italiana. Analizza questi dati di spesa e rispondi alla domanda in italiano, in modo chiaro e conciso. Usa emoji dove utile. Se hai dati insufficienti dillo chiaramente.
-
-DATI SPESE:
-${riepilogo}
-
-DOMANDA: ${domanda}`
-        }]
+        system: systemPrompt,
+        messages: messaggi
       })
     })
 
