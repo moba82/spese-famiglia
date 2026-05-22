@@ -28,10 +28,11 @@ const monthKey = (d) => d.slice(0, 7);
 const today = () => new Date().toISOString().slice(0, 10);
 const mesePretty = (k) => new Date(k + "-01").toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 
+// taralli e frutta secca esclusi da junk
 const JUNK_KEYWORDS = [
   "patatine","chips","nachos","cheetos","popcorn","pringles","doritos","fonzies",
   "nutella","pan di stelle","mulino bianco","ringo","oreo","kit kat","kinder","mars",
-  "snickers","bounty","twix","ferrero","ovetto","biscotti","wafer","merendina","merendine",
+  "snickers","bounty","twix","ferrero","ovetto","wafer","merendina","merendine",
   "crostatina","plumcake","muffin","pandoro","panettone","gelato","ghiacciolo","cornetto","magnum",
   "coca cola","pepsi","fanta","sprite","aranciata","limonata","energy drink","red bull","monster",
   "succo","succhi","the freddo","thè freddo","ice tea","gatorade","bibita","bevanda",
@@ -111,30 +112,46 @@ export default function App() {
   const [dataSp, setDataSp] = useState(today());
   const [items, setItems] = useState([{ nome: "", prezzo: "", categoria: CAT_KEYS[0] }]);
   const fileRef = useRef();
+  const chatBottomRef = useRef();
 
+  // chat multi-turno
   const [domanda, setDomanda] = useState("");
   const [chiedendo, setChiedendo] = useState(false);
-  const [cronologia, setCronologia] = useState([]);
+  const [cronologia, setCronologia] = useState([]); // [{tipo:"domanda"|"risposta", testo}]
 
   const chiedi = async () => {
-    if (!domanda.trim()) return;
-    setChiedendo(true);
-    const d = domanda;
+    if (!domanda.trim() || chiedendo) return;
+    const d = domanda.trim();
     setDomanda("");
-    setCronologia(c => [...c, { tipo: "domanda", testo: d }]);
+    setChiedendo(true);
+
+    const nuovaCronologia = [...cronologia, { tipo: "domanda", testo: d }];
+    setCronologia(nuovaCronologia);
+
+    // costruisce la storia completa per l'API
+    const messaggi = nuovaCronologia.map(m => ({
+      role: m.tipo === "domanda" ? "user" : "assistant",
+      content: m.testo
+    }));
+
     try {
       const r = await fetch('/api/chiedi', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domanda: d, spese })
+        body: JSON.stringify({ messaggi, spese })
       });
       const data = await r.json();
-      setCronologia(c => [...c, { tipo: "risposta", testo: data.risposta || "Nessuna risposta." }]);
+      const risposta = data.risposta || "Nessuna risposta.";
+      setCronologia(c => [...c, { tipo: "risposta", testo: risposta }]);
     } catch {
       setCronologia(c => [...c, { tipo: "risposta", testo: "Errore di connessione, riprova." }]);
     }
     setChiedendo(false);
   };
+
+  useEffect(() => {
+    if (chatBottomRef.current) chatBottomRef.current.scrollIntoView({ behavior: "smooth" });
+  }, [cronologia]);
 
   useEffect(() => {
     (async () => {
@@ -158,7 +175,7 @@ export default function App() {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
       const result = await leggiScontrino(b64, file.type);
       setNegozio(result.negozio || "");
-      setDataSp(today());
+      setDataSp(today()); // sempre oggi, modificabile
       setItems(result.articoli?.length
         ? result.articoli.map(a => ({ nome: a.nome, prezzo: String(a.prezzo), categoria: CAT_KEYS.includes(a.categoria) ? a.categoria : CAT_KEYS[0] }))
         : [{ nome: "", prezzo: "", categoria: CAT_KEYS[0] }]);
@@ -416,7 +433,7 @@ export default function App() {
                 <Card style={{ textAlign: "center", padding: "32px 24px", background: `linear-gradient(135deg, ${T.primaryLight}, #fff)`, border: `2px dashed ${T.primary}44` }}>
                   <div style={{ width: 64, height: 64, borderRadius: 20, background: T.primaryLight, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, margin: "0 auto 14px" }}>📸</div>
                   <div style={{ fontWeight: 700, color: T.text, fontSize: 16, marginBottom: 6 }}>Fotografa lo scontrino</div>
-                  <p style={{ color: T.sub, marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>L'AI legge automaticamente negozio, prodotti e prezzi. La data viene impostata ad oggi e puoi modificarla.</p>
+                  <p style={{ color: T.sub, marginBottom: 20, fontSize: 13, lineHeight: 1.6 }}>L'AI legge negozio e prodotti automaticamente.</p>
                   <input type="file" accept="image/*" capture="environment" ref={fileRef} onChange={onFoto} style={{ display: "none" }} />
                   <button onClick={() => fileRef.current.click()} disabled={loading} style={{ background: T.primary, color: "#fff", border: "none", borderRadius: 14, padding: "14px 0", fontSize: 15, cursor: "pointer", fontWeight: 700, width: "100%", fontFamily: "inherit", opacity: loading ? 0.65 : 1 }}>
                     {loading ? "⏳ Lettura in corso…" : "📷 Carica o scatta foto"}
@@ -433,7 +450,23 @@ export default function App() {
               <Card>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <div><div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Negozio</div><input value={negozio} onChange={e => setNegozio(e.target.value)} placeholder="Es. Rossetto, Conad…" style={inp} /></div>
-                  <div><div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Data</div><input type="date" value={dataSp} onChange={e => setDataSp(e.target.value)} style={inp} /></div>
+
+                  {/* DATA — evidenziata e modificabile */}
+                  <div style={{ background: T.amberLight, borderRadius: 14, padding: "14px 16px", border: `2px solid ${T.amber}44` }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.amber, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                      📅 Data scontrino — modificala se necessario
+                    </div>
+                    <input
+                      type="date"
+                      value={dataSp}
+                      onChange={e => setDataSp(e.target.value)}
+                      style={{ ...inp, background: "#fff", border: `1.5px solid ${T.amber}66`, fontWeight: 700, fontSize: 16 }}
+                    />
+                    <div style={{ fontSize: 11, color: T.amber, marginTop: 6 }}>
+                      Impostata ad oggi. Cambiala se lo scontrino è di un altro giorno.
+                    </div>
+                  </div>
+
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1 }}>Articoli</div>
                   {items.map((item, i) => (
                     <div key={i} style={{ background: T.bg, borderRadius: 14, padding: "12px", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -467,60 +500,72 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ fontWeight: 800, color: T.text, fontSize: 22 }}>💬 Chiedi alle tue spese</div>
 
-            <Card style={{ background: `linear-gradient(135deg, ${T.primaryLight}, #fff)` }}>
-              <div style={{ fontSize: 13, color: T.sub, marginBottom: 10, fontWeight: 600 }}>Esempi di domande:</div>
-              {[
-                "Quante volte abbiamo comprato il tofu?",
-                "Dove costa meno la pasta?",
-                "Quanto spendiamo in media per scontrino?",
-                "Quali sono i 3 prodotti che compriamo più spesso?",
-                "Confronta le spese tra supermercati diversi",
-                "Quali prodotti abbiamo comprato solo una volta?"
-              ].map((e, i) => (
-                <button key={i} onClick={() => setDomanda(e)} style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: `1px solid ${T.border}`, borderRadius: 10, padding: "9px 13px", marginBottom: 6, fontSize: 13, color: T.primary, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
-                  {e}
-                </button>
-              ))}
-            </Card>
-
-            <div style={{ display: "flex", gap: 8, position: "sticky", bottom: 90, zIndex: 10 }}>
-              <input
-                value={domanda}
-                onChange={e => setDomanda(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && chiedi()}
-                placeholder="Scrivi la tua domanda…"
-                style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 14, padding: "13px 16px", fontSize: 15, fontFamily: "inherit", outline: "none", background: "#fff", color: T.text, boxShadow: T.shadow }}
-              />
-              <button onClick={chiedi} disabled={chiedendo || !domanda.trim()} style={{ background: T.primary, color: "#fff", border: "none", borderRadius: 14, padding: "0 20px", fontSize: 20, cursor: "pointer", opacity: chiedendo ? 0.6 : 1, boxShadow: T.shadow }}>
-                {chiedendo ? "⏳" : "➤"}
-              </button>
-            </div>
+            {cronologia.length === 0 && (
+              <Card style={{ background: `linear-gradient(135deg, ${T.primaryLight}, #fff)` }}>
+                <div style={{ fontSize: 13, color: T.sub, marginBottom: 10, fontWeight: 600 }}>Esempi di domande:</div>
+                {[
+                  "Quante volte abbiamo comprato il tofu?",
+                  "Dove costa meno la pasta?",
+                  "Quanto spendiamo in media per scontrino?",
+                  "Quali prodotti compriamo più spesso?",
+                  "Confronta le spese tra supermercati",
+                  "Quali prodotti abbiamo comprato solo una volta?",
+                ].map((e, i) => (
+                  <button key={i} onClick={() => setDomanda(e)} style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: `1px solid ${T.border}`, borderRadius: 10, padding: "9px 13px", marginBottom: 6, fontSize: 13, color: T.primary, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+                    {e}
+                  </button>
+                ))}
+              </Card>
+            )}
 
             {spese.length === 0 && (
               <div style={{ textAlign: "center", color: T.muted, padding: "20px 0" }}>
-                <p>Aggiungi prima qualche scontrino per poter fare domande!</p>
+                <p>Aggiungi prima qualche scontrino!</p>
               </div>
             )}
 
+            {/* messaggi */}
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {[...cronologia].reverse().map((m, i) => (
+              {cronologia.map((m, i) => (
                 <div key={i} style={{
                   padding: "13px 16px", borderRadius: 16,
                   background: m.tipo === "domanda" ? T.primary : "#fff",
                   color: m.tipo === "domanda" ? "#fff" : T.text,
                   border: m.tipo === "risposta" ? `1px solid ${T.border}` : "none",
                   boxShadow: T.shadow,
-                  marginLeft: m.tipo === "domanda" ? "10%" : "0",
-                  marginRight: m.tipo === "risposta" ? "10%" : "0",
+                  marginLeft: m.tipo === "domanda" ? "8%" : "0",
+                  marginRight: m.tipo === "risposta" ? "8%" : "0",
                   fontSize: 14, lineHeight: 1.6,
                   fontWeight: m.tipo === "domanda" ? 600 : 400,
                   whiteSpace: "pre-wrap"
                 }}>
-                  {m.tipo === "domanda" && <div style={{ fontSize: 10, opacity: 0.7, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Tu</div>}
-                  {m.tipo === "risposta" && <div style={{ fontSize: 10, color: T.primary, marginBottom: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>🤖 Assistente</div>}
+                  <div style={{ fontSize: 10, opacity: m.tipo === "domanda" ? 0.7 : 1, color: m.tipo === "risposta" ? T.primary : "inherit", marginBottom: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                    {m.tipo === "domanda" ? "Tu" : "🤖 Assistente"}
+                  </div>
                   {m.testo}
                 </div>
               ))}
+              {chiedendo && (
+                <div style={{ padding: "13px 16px", borderRadius: 16, background: "#fff", border: `1px solid ${T.border}`, boxShadow: T.shadow, marginRight: "8%", fontSize: 14, color: T.muted }}>
+                  <div style={{ fontSize: 10, color: T.primary, marginBottom: 4, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>🤖 Assistente</div>
+                  ⏳ Sto elaborando…
+                </div>
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* input */}
+            <div style={{ display: "flex", gap: 8, position: "sticky", bottom: 90, zIndex: 10 }}>
+              <input
+                value={domanda}
+                onChange={e => setDomanda(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && chiedi()}
+                placeholder={cronologia.length > 0 ? "Continua la conversazione…" : "Scrivi la tua domanda…"}
+                style={{ flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 14, padding: "13px 16px", fontSize: 15, fontFamily: "inherit", outline: "none", background: "#fff", color: T.text, boxShadow: T.shadow }}
+              />
+              <button onClick={chiedi} disabled={chiedendo || !domanda.trim()} style={{ background: T.primary, color: "#fff", border: "none", borderRadius: 14, padding: "0 20px", fontSize: 20, cursor: "pointer", opacity: chiedendo ? 0.6 : 1, boxShadow: T.shadow }}>
+                ➤
+              </button>
             </div>
           </div>
         )}
